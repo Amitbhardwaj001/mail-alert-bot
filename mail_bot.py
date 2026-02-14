@@ -2,15 +2,16 @@ import os
 import sqlite3
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from apscheduler.schedulers.background import BackgroundScheduler
 
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 BOT_TOKEN = "8315956970:AAGFq1nVflHIOu1v9_6pHNN61LQBuHf4xN0"
+
+# ---------- GLOBAL CHAT ID ----------
+CHAT_ID = None
 
 # ---------- DATABASE ----------
 conn = sqlite3.connect("vip_emails.db", check_same_thread=False)
@@ -34,6 +35,9 @@ service = gmail_auth()
 
 # ---------- COMMANDS ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global CHAT_ID
+    CHAT_ID = update.effective_chat.id
+
     await update.message.reply_text(
         "🤖 Mail Alert Bot Active!\n\n"
         "Commands:\n"
@@ -109,21 +113,29 @@ async def checkmail(update: Update, context: ContextTypes.DEFAULT_TYPE):
 last_ids = set()
 
 async def auto_check(context: ContextTypes.DEFAULT_TYPE):
-    global last_ids
+    global last_ids, CHAT_ID
+
+    if CHAT_ID is None:
+        return  # user hasn’t pressed /start yet
+
     mails = fetch_vip_mails()
+
     for msg in mails:
         if msg['id'] not in last_ids:
             last_ids.add(msg['id'])
+
             m = service.users().messages().get(userId='me', id=msg['id']).execute()
             headers = m['payload']['headers']
             subject = sender = ""
+
             for h in headers:
                 if h['name'] == 'Subject':
                     subject = h['value']
                 if h['name'] == 'From':
                     sender = h['value']
+
             await context.bot.send_message(
-                chat_id=context.job.chat_id,
+                chat_id=CHAT_ID,
                 text=f"🔔 New Important Mail!\n\nFrom: {sender}\nSubject: {subject}"
             )
 
